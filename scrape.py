@@ -3,6 +3,63 @@ from datetime import datetime
 import requests
 import unicodedata
 import csv
+import psycopg2
+import environs
+
+env = environs.Env()
+env.read_env()
+
+DB_HOST=env.str('DB_HOST')
+DB_NAME=env.str('DB_NAME')
+DB_USER=env.str('DB_USER')
+DB_PW=env.str('DB_PW')
+
+def write_entry(entry):
+    try:
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            database=DB_NAME,
+            user=DB_USER,
+            password=DB_PW
+        )
+
+        cur = conn.cursor()
+        
+        if entry:
+            countryother = entry[0]
+            totalcases = int(entry[1].replace(',', ''))
+            newcases = entry[2].replace(',', '')
+            totaldeaths = entry[3].replace(',', '')
+            newdeaths = entry[4].replace(',', '')
+            totalrecovered = entry[5].replace(',', '')
+            activecases = entry[6].replace(',', '')
+            seriouscritical = entry[7].replace(',', '')
+            totcases1mpop = entry[8].replace(',', '')
+            deaths1mpop = entry[9].replace(',', '')
+            date = datetime.strptime('2020 ' + entry[10], '%Y %b %d').strftime('%Y-%m-%d')
+            query = f"INSERT INTO cases (countryother, totalcases, newcases, totaldeaths, " \
+                    f"newdeaths, totalrecovered, activecases, seriouscritical, totcases1mpop, " \
+                    f"deaths1mpop, firstcase) " \
+                    f"VALUES ('{countryother}', '{totalcases}', '{newcases}', '{totaldeaths}', '{newdeaths}', " \
+                    f"'{totalrecovered}', '{activecases}', '{seriouscritical}', '{totcases1mpop}', '{deaths1mpop}', '{date}') " \
+                    f"ON CONFLICT (countryother) DO UPDATE SET " \
+                    f"totalcases='{totalcases}', newcases='{newcases}', totaldeaths='{totaldeaths}', " \
+                    f"newdeaths='{newdeaths}', totalrecovered='{totalrecovered}', activecases='{activecases}', " \
+                    f"seriouscritical='{seriouscritical}', totcases1mpop='{totcases1mpop}', deaths1mpop='{deaths1mpop}' " \
+                    f"WHERE cases.countryother = '{countryother}' RETURNING countryother;"
+
+            cur.execute(query)
+            conn.commit()
+            results = cur.fetchone()
+            print(results)
+    except Exception as e:
+        print(e)
+
+    finally:
+        if (conn):
+            cur.close()
+            conn.close()
+
 
 source = requests.get('https://www.worldometers.info/coronavirus/#countries').text
 
@@ -30,9 +87,9 @@ dataset = soup.find_all("tr", style="")
 for entry in dataset:
     new_entry = []
     for item in entry.find_all("td"):
-        new_entry.append(item.get_text(strip=True).strip('\n').strip())
-    csv_write.writerow(new_entry)
+        new_entry.append(item.get_text(strip=True).strip('\n').strip().replace(',', ''))
     if "Total:" in new_entry:
+        csv_file.close()
         break
-
-csv_file.close()
+    csv_write.writerow(new_entry)
+    write_entry(new_entry)
